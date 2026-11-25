@@ -1,1 +1,193 @@
 
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>আমার আয়-খরচ ট্র্যাকার</title>
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green: #14532d;
+    --gold: #c8a24a;
+    --bg: #f6f5ef;
+    --card: #ffffff;
+    --text: #1d1d1b;
+    --red: #b42318;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Hind Siliguri", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 16px;
+    max-width: 520px;
+    margin-inline: auto;
+  }
+  h1 { color: var(--green); font-size: 1.5rem; margin: 8px 0 16px; }
+  .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .box { background: var(--card); border-radius: 12px; padding: 12px; border-left: 4px solid var(--gold); }
+  .box small { color: #666; display: block; }
+  .box strong { font-size: 1.3rem; }
+  .profit { color: var(--green); }
+  .loss { color: var(--red); }
+  form { background: var(--card); border-radius: 12px; padding: 14px; display: grid; gap: 10px; margin-bottom: 16px; }
+  label { font-size: 0.9rem; color: #444; display: grid; gap: 4px; }
+  input { font: inherit; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
+  input:focus-visible, button:focus-visible { outline: 3px solid var(--gold); outline-offset: 1px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button.save {
+    font: inherit; font-weight: 700; padding: 12px; border: 0; border-radius: 8px;
+    background: var(--green); color: #fff; cursor: pointer;
+  }
+  h2 { font-size: 1.1rem; color: var(--green); }
+  .item { background: var(--card); border-radius: 12px; padding: 12px; margin-bottom: 8px;
+          display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .item small { color: #666; display: block; }
+  .del { font: inherit; border: 1px solid var(--red); color: var(--red); background: none;
+         border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  .empty { color: #666; text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+
+<h1>আমার আয়-খরচ ট্র্যাকার</h1>
+
+<!-- সারাংশ: আজকের ও এই মাসের হিসাব এখানে দেখাবে -->
+<section class="summary">
+  <div class="box"><small>আজকের লাভ</small><strong id="todayProfit">০</strong></div>
+  <div class="box"><small>এই মাসের লাভ</small><strong id="monthProfit">০</strong></div>
+  <div class="box"><small>এই মাসের ডেলিভারি</small><strong id="monthDeliveries">০</strong></div>
+  <div class="box"><small>প্রতি ডেলিভারিতে লাভ</small><strong id="perDelivery">০</strong></div>
+</section>
+
+<!-- তথ্য দেওয়ার ফর্ম -->
+<form id="form">
+  <label>তারিখ <input type="date" id="date" required></label>
+  <div class="row">
+    <label>ডেলিভারি সংখ্যা <input type="number" id="deliveries" min="0" inputmode="numeric" required></label>
+    <label>মোট আয় (টাকা) <input type="number" id="income" min="0" inputmode="numeric" required></label>
+  </div>
+  <div class="row">
+    <label>পেট্রোল খরচ <input type="number" id="fuel" min="0" inputmode="numeric" value="0"></label>
+    <label>অন্যান্য খরচ <input type="number" id="other" min="0" inputmode="numeric" value="0"></label>
+  </div>
+  <button class="save" type="submit">সেভ করুন</button>
+</form>
+
+<h2>সব হিসাব</h2>
+<div id="list"></div>
+
+<script>
+  // ১. ডাটা লোড: ব্রাউজারের localStorage থেকে আগের হিসাব আনি
+  let entries = [];
+  try {
+    entries = JSON.parse(localStorage.getItem("entries")) || [];
+  } catch (e) {
+    entries = [];
+  }
+
+  // ২. ডাটা সেভ করার ফাংশন
+  function save() {
+    try {
+      localStorage.setItem("entries", JSON.stringify(entries));
+    } catch (e) {
+      alert("সেভ করা যায়নি। ব্রাউজারের প্রাইভেট মোড বন্ধ করে দেখুন।");
+    }
+  }
+
+  // ৩. সংখ্যাকে বাংলায় দেখানোর ফাংশন
+  function bn(n) {
+    return Number(n).toLocaleString("bn-BD") + " ৳";
+  }
+
+  // ৪. একটি এন্ট্রির লাভ = আয় - পেট্রোল - অন্য খরচ
+  function profitOf(e) {
+    return e.income - e.fuel - e.other;
+  }
+
+  // ৫. স্ক্রিনে সব কিছু আঁকা
+  function render() {
+    const today = new Date().toISOString().slice(0, 10);
+    const month = today.slice(0, 7);
+
+    let todayProfit = 0, monthProfit = 0, monthDeliveries = 0;
+    for (const e of entries) {
+      if (e.date === today) todayProfit += profitOf(e);
+      if (e.date.startsWith(month)) {
+        monthProfit += profitOf(e);
+        monthDeliveries += e.deliveries;
+      }
+    }
+
+    setProfit("todayProfit", todayProfit);
+    setProfit("monthProfit", monthProfit);
+    document.getElementById("monthDeliveries").textContent =
+      monthDeliveries.toLocaleString("bn-BD");
+    document.getElementById("perDelivery").textContent =
+      monthDeliveries ? bn(Math.round(monthProfit / monthDeliveries)) : "০";
+
+    // তালিকা: নতুন তারিখ আগে
+    const list = document.getElementById("list");
+    list.innerHTML = "";
+    if (entries.length === 0) {
+      list.innerHTML = '<p class="empty">এখনো কোনো হিসাব নেই। উপরের ফর্মে প্রথম দিনের হিসাব দিন।</p>';
+      return;
+    }
+    const sorted = [...entries].sort((a, b) => b.date.localeCompare(a.date));
+    for (const e of sorted) {
+      const p = profitOf(e);
+      const div = document.createElement("div");
+      div.className = "item";
+      div.innerHTML =
+        "<div><strong></strong><small></small></div>" +
+        '<div><span class="amt"></span> <button class="del" type="button">মুছুন</button></div>';
+      div.querySelector("strong").textContent = e.date;
+      div.querySelector("small").textContent =
+        e.deliveries + "টি ডেলিভারি • আয় " + bn(e.income) +
+        " • খরচ " + bn(e.fuel + e.other);
+      const amt = div.querySelector(".amt");
+      amt.textContent = bn(p);
+      amt.className = "amt " + (p >= 0 ? "profit" : "loss");
+      div.querySelector(".del").addEventListener("click", () => {
+        if (confirm("এই হিসাবটি মুছে ফেলবেন?")) {
+          entries = entries.filter((x) => x.id !== e.id);
+          save();
+          render();
+        }
+      });
+      list.appendChild(div);
+    }
+  }
+
+  function setProfit(id, value) {
+    const el = document.getElementById(id);
+    el.textContent = bn(value);
+    el.className = value >= 0 ? "profit" : "loss";
+  }
+
+  // ৬. ফর্ম সাবমিট করলে নতুন এন্ট্রি যোগ
+  document.getElementById("date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    entries.push({
+      id: Date.now(),
+      date: document.getElementById("date").value,
+      deliveries: Number(document.getElementById("deliveries").value),
+      income: Number(document.getElementById("income").value),
+      fuel: Number(document.getElementById("fuel").value) || 0,
+      other: Number(document.getElementById("other").value) || 0,
+    });
+    save();
+    render();
+    ev.target.reset();
+    document.getElementById("date").value = new Date().toISOString().slice(0, 10);
+    document.getElementById("fuel").value = 0;
+    document.getElementById("other").value = 0;
+  });
+
+  render();
+</script>
+</body>
+</html>
